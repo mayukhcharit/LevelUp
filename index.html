@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Level Up</title>
+<style>
+:root{--bg:#161a2e;--card:#1f2440;--line:#2f3660;--tx:#eef0ff;--mut:#9aa1c9;--study:#6fb0ff;--ex:#ff9470;--sl:#b7a1ff;--bad:#ff6b81;
+font-family:ui-rounded,"Trebuchet MS",system-ui,sans-serif}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);padding:env(safe-area-inset-top) 14px calc(env(safe-area-inset-bottom) + 24px);max-width:520px;margin:auto}
+h1{font-size:26px;margin:18px 0 12px;letter-spacing:-.5px}
+h2{font-size:19px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
+.lv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.lv div{background:var(--card);border-radius:14px;padding:10px;border-top:4px solid var(--c)}
+.lv b{display:block;font-size:24px;color:var(--c)}.lv small{color:var(--mut);font-size:12px}
+.bar{height:7px;background:var(--line);border-radius:9px;margin-top:7px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--c);border-radius:9px;transition:width .4s}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+input[type=number],input[type=time]{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);color:var(--tx);border-radius:12px;padding:12px;font-size:17px;font-family:inherit}
+label{color:var(--mut);font-size:14px;min-width:64px}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 14px;background:var(--c,var(--line));color:#10132a;width:100%;margin-top:2px}
+button.ghost{background:var(--line);color:var(--tx)}
+button:active{transform:scale(.98)}
+ul{list-style:none;padding:0;margin:12px 0 0}
+li{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
+li span:last-child{color:var(--mut)}
+.sub{color:var(--mut);font-size:13px;margin:14px 0 0}
+.sw{position:relative;width:62px;height:34px;flex:none}
+.sw input{opacity:0;position:absolute;inset:0;width:100%;height:100%;margin:0;z-index:2}
+.sw s{position:absolute;inset:0;background:var(--line);border-radius:20px;transition:.2s}
+.sw s:after{content:"";position:absolute;top:4px;left:4px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s}
+.sw input:checked+s{background:var(--ex)}.sw input:checked+s:after{transform:translateX(28px)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#fff;color:#10132a;padding:10px 16px;border-radius:20px;font-weight:700;font-size:14px;opacity:0;transition:.3s;pointer-events:none;max-width:90%;text-align:center}
+.toast.on{opacity:1}
+.neg{color:var(--bad)}
+</style>
+</head>
+<body>
+<h1>Level Up</h1>
+<div class="lv" id="lv"></div>
+
+<div class="card" style="--c:var(--study)">
+  <h2>Study</h2>
+  <div class="row"><label>Hours</label><input type="number" id="sh" min="0" placeholder="0" inputmode="numeric"></div>
+  <div class="row"><label>Minutes</label><input type="number" id="sm" min="0" max="59" placeholder="0" inputmode="numeric"></div>
+  <button id="addS">Log session</button>
+  <ul id="sessions"></ul>
+  <button class="ghost" id="finS" style="margin-top:12px">Finish Study</button>
+  <p class="sub">Daily totals</p><ul id="studyLog"></ul>
+</div>
+
+<div class="card" style="--c:var(--ex)">
+  <h2>Exercise</h2>
+  <div class="row"><label style="flex:1;font-size:16px;color:var(--tx)">Worked out today</label><span class="sw"><input type="checkbox" id="ex"><s></s></span></div>
+  <button id="addE">Log exercise</button>
+  <ul id="exLog"></ul>
+</div>
+
+<div class="card" style="--c:var(--sl)">
+  <h2>Sleep</h2>
+  <div class="row"><label>Slept at</label><input type="time" id="t1"></div>
+  <div class="row"><label>Woke at</label><input type="time" id="t2"></div>
+  <button id="addZ">Log sleep</button>
+  <ul id="slLog"></ul>
+</div>
+
+<div class="card">
+  <h2>Save &amp; load</h2>
+  <div class="row"><button class="ghost" id="exp">Export</button><button class="ghost" id="imp">Import</button></div>
+  <input type="file" id="file" accept=".gz" hidden>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const blank=()=>({sessions:[],studyLog:[],exLog:[],slLog:[],
+  xp:{study:0,exercise:0,sleep:0},lv:{study:{n:1,xp:0},exercise:{n:1,xp:0},sleep:{n:1,xp:0}}});
+let S=blank();
+try{const x=localStorage.getItem("levelup");if(x)S=JSON.parse(x)}catch(e){}
+const need=n=>100+(n-1)*20;
+const fmt=m=>`${Math.floor(m/60)}h ${m%60}m`;
+const sign=n=>n>0?"+"+n:""+n;
+let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),2200)}
+
+function addXP(k,pts){
+  if(!pts)return;
+  S.xp[k]+=pts; const L=S.lv[k]; L.xp+=pts;
+  let up=false;
+  while(L.xp>=need(L.n)){L.xp-=need(L.n);L.n++;up=true}
+  if(L.xp<0)L.xp=0; // XP loss never drops you a level
+  toast((k[0].toUpperCase()+k.slice(1))+" XP "+sign(pts)+(up?" · Level "+L.n+"!":""));
+}
+function save(){try{localStorage.setItem("levelup",JSON.stringify(S))}catch(e){}render()}
+const li=(a,b,cls="")=>`<li><span>${a}</span><span class="${cls}">${b}</span></li>`;
+const empty=t=>`<li><span style="color:var(--mut)">${t}</span></li>`;
+
+function render(){
+  const cfg=[["study","Study","--study"],["exercise","Exercise","--ex"],["sleep","Sleep","--sl"]];
+  $("lv").innerHTML=cfg.map(([k,n,c])=>{const L=S.lv[k],r=need(L.n);
+    return `<div style="--c:var(${c})"><small>${n}</small><b>Lv ${L.n}</b><small>${L.xp}/${r} xp</small><div class="bar"><i style="width:${Math.min(100,L.xp/r*100)}%"></i></div></div>`}).join("");
+  $("sessions").innerHTML=S.sessions.length?S.sessions.map((m,i)=>li("Session "+(i+1),fmt(m))).join(""):empty("No sessions yet today");
+  $("studyLog").innerHTML=S.studyLog.length?S.studyLog.map((m,i)=>li(`Day ${i+1} Study`,fmt(m))).reverse().join(""):empty("Nothing logged");
+  $("exLog").innerHTML=S.exLog.length?S.exLog.map((v,i)=>li(`Day ${i+1} Exercise`,v?"True":"False",v?"":"neg")).reverse().join(""):empty("Nothing logged");
+  $("slLog").innerHTML=S.slLog.length?S.slLog.map((m,i)=>li(`Day ${i+1} Sleep`,fmt(m))).reverse().join(""):empty("Nothing logged");
+}
+
+$("addS").onclick=()=>{
+  const m=(+$("sh").value||0)*60+(+$("sm").value||0);
+  if(m<=0)return toast("Enter a session length");
+  S.sessions.push(m);
+  addXP("study",m>=120?30:m>=60?20:m>=30?10:0);
+  $("sh").value=$("sm").value="";save();
+};
+$("finS").onclick=()=>{
+  if(!S.sessions.length)return toast("No sessions to finish");
+  S.studyLog.push(S.sessions.reduce((a,b)=>a+b,0));
+  S.sessions=[];save();
+};
+$("addE").onclick=()=>{
+  const v=$("ex").checked;
+  S.exLog.push(v);
+  addXP("exercise",v?25:-5);
+  $("ex").checked=false;save();
+};
+$("addZ").onclick=()=>{
+  if(!$("t1").value||!$("t2").value)return toast("Enter both times");
+  const p=s=>{const[a,b]=s.split(":");return +a*60+ +b};
+  const a=p($("t1").value),b=p($("t2").value);
+  let d=b-a;if(d<=0)d+=1440;
+  S.slLog.push(d);
+  let pts=0;
+  if(d>=390&&d<=480)pts+=25;
+  // bedtime counted past midnight: evening times (12:00+) are before 00:30
+  if(a>=720||a<=30)pts+=5; else if(a>90)pts-=10;
+  addXP("sleep",pts);
+  save();
+};
+
+async function pipe(stream,tf){return new Response(stream.pipeThrough(tf)).arrayBuffer()}
+$("exp").onclick=async()=>{
+  try{
+    const blob=new Blob([JSON.stringify(S)]);
+    const buf=await pipe(blob.stream(),new CompressionStream("gzip"));
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([buf],{type:"application/gzip"}));
+    a.download="levelup-data.json.gz";a.click();
+    toast("Exported");
+  }catch(e){toast("Export failed: "+e.message)}
+};
+$("imp").onclick=()=>$("file").click();
+$("file").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const buf=await pipe(f.stream(),new DecompressionStream("gzip"));
+    const d=JSON.parse(new TextDecoder().decode(buf));
+    if(!d.lv||!d.xp)throw new Error("not a Level Up file");
+    S=Object.assign(blank(),d);save();toast("Imported");
+  }catch(err){toast("Import failed: "+err.message)}
+  e.target.value="";
+};
+render();
+</script>
+</body>
+</html>
